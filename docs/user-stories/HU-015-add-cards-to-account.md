@@ -13,20 +13,20 @@ Given I am an authenticated user on the Cards section
 When I click "Add New Card" button
 Then a card registration form should appear with:
   | Field              | Validation                              |
-  | card_number        | 16 digits, required, Luhn algorithm     |
-  | card_holder_name   | Alphabetic, required, 3-50 chars        |
-  | expiry_date        | MM/YY format, future date required      |
-  | cvv                | 3-4 digits, required (encrypted)        |
+  | card_number        | 16 digits, required, numeric only       |
+  | card_holder_name   | Required, 3-50 chars                    |
+  | expiry_date        | MM/YY format, required                  |
+  | cvv                | 3-4 digits, optional (NOT stored)       |
   | card_type          | Debit/Credit dropdown                   |
   | nickname           | Optional, 20 chars max                  |
 And when I submit valid data
 Then the system should:
   | Action                  | Behavior                              |
-  | Validate card number    | Check Luhn + issuer (Visa/MC/Amex)    |
+  | Validate card number    | 16 digits, numeric format check       |
   | Create card record      | POST /api/v1/cards                    |
   | Link to user_id         | Associate card with current user      |
   | Set initial status      | "Active"                              |
-  | Set initial balance     | $0.00 (or sync with issuer API)       |
+  | Set initial balance     | $0.00                                 |
 And I should see: "Card added successfully"
 And the new card appears in my cards list
 ```
@@ -34,11 +34,11 @@ And the new card appears in my cards list
 ### Scenario: Card validation failure
 
 ```gherkin
-Given I enter an invalid card number "1234-5678-9012-3456"
+Given I enter an invalid card number "1234" (less than 16 digits)
 When I submit the form
 Then I should receive validation errors:
-  | Field              | Error Message                           |
-  | card_number        | "Invalid card number (Luhn check fail)" |
+  | Field              | Error Message                              |
+  | card_number        | "Card number must be exactly 16 digits"   |
 And the form should not submit
 ```
 
@@ -79,15 +79,24 @@ Then the system should:
 And I should see: "Card removed successfully"
 ```
 
-## Acceptance Criteria - Non-Functional
+## Acceptance Criteria - Non-Functional (MVP)
 
-- **Security**: CVV encrypted in transit and storage, never logged
-- **Performance**: Card validation < 500ms
-- **Compliance**: PCI-DSS compliant (tokenize card data)
+- **Security**: CVV NOT stored (input validation only, discarded after form submission)
+- **Security**: Card numbers stored as plain text with encrypted database volumes
+- **Security**: Only last 4 digits displayed in UI (masked)
+- **Performance**: Card operations complete in < 1000ms
 - **Audit**: All add/remove actions logged to audit trail (HU-002)
 
-## Estimation
+**Post-MVP Enhancements:**
+- PCI-DSS tokenization
+- Luhn algorithm validation
+- Card issuer detection
+- Advanced security measures
 
-- **Story Points**: 13
+## Estimation (MVP)
+
+- **Story Points**: 8
 - **Priority**: HIGH
-- **Dependency**: HU-016 (card list view), PCI-DSS compliance setup
+- **Dependency**: HU-016 (card list view), Authentication system
+- **Scope**: MVP - Basic CRUD with format validation only
+- **Post-MVP**: +5 points for PCI-DSS compliance, Luhn validation, card issuer detection
