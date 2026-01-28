@@ -1,0 +1,1 @@
+"""API Gateway schemas package."""
