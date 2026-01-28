@@ -1,492 +1,570 @@
 ---
-goal: Implement HU-015 - View and Manage Multiple Cards with Full-Stack Integration
+goal: Implement Card Management System with Add/Link/Remove Capabilities (HU-015)
 version: 1.0
 date_created: 2026-01-28
 last_updated: 2026-01-28
 owner: Development Team
 status: 'Planned'
-tags: ['feature', 'cards', 'user-app', 'api', 'database']
+tags: [feature, card-management, pci-dss, tdd, backend, frontend]
 ---
 
 # Introduction
 
 ![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
 
-This implementation plan enables bank customers to view up to 3 active cards with details (number, balance, expiry, status) and perform key actions (view transactions, transfer money, block card) from the user app dashboard. The feature follows Clean Architecture principles, implements TDD/BDD practices with 95%+ test coverage, and integrates with existing fraud detection and transaction processing systems.
+This implementation plan covers the **MVP development** of HU-015: Add and Link Cards to Account. The feature enables bank customers to manage multiple payment cards (debit/credit) with basic CRUD operations and audit trail integration.
+
+**Key Deliverables (MVP Scope):**
+- Backend API endpoints for card CRUD operations
+- Basic input validation (format, required fields)
+- Frontend card management UI (user-app)
+- Integration with existing audit trail system
+- Comprehensive test coverage (unit, integration, E2E)
+
+**Deferred to Post-MVP:**
+- Advanced card validation (Luhn algorithm, issuer detection)
+- PCI-DSS compliance (tokenization, encryption)
+- Payment processor integration
+
+**TDD Approach:** All implementation follows RED-GREEN-REFACTOR cycle with approval gates between phases.
 
 ## 1. Requirements & Constraints
 
 ### Functional Requirements
-- **REQ-001**: Display up to 3 active cards on user dashboard (Inicio page)
-- **REQ-002**: Show card details: masked number (XXXX-XXXX-XXXX-1234), cardholder name, balance, expiry date, status, type
-- **REQ-003**: Implement 4 card action buttons: View Transactions, Transfer Money, Block Card, Card Details
-- **REQ-004**: Display visual indicators for blocked cards (red badge, dimmed appearance, disabled transfer button)
-- **REQ-005**: Modal/page to view card transactions sorted by date (most recent first)
-- **REQ-006**: Transfer form with fields: source_card (pre-filled), amount, user_id, location, device_id, transaction_id, description
-- **REQ-007**: Prevent transfers from blocked cards with tooltip message
-- **REQ-008**: Pagination/View All link for accounts with >3 cards
-- **REQ-009**: Empty state message "No cards found" with "Request a Card" button for no cards
-- **REQ-010**: Return HTTP 403 Forbidden for users without card viewing permissions
-- **REQ-011**: Handle insufficient balance error with available_balance in response
 
-### Non-Functional Requirements
-- **PER-001**: Card data loads within 2 seconds
-- **ACC-001**: All buttons and text meet WCAG 2.1 AA accessibility standards
-- **RES-001**: Responsive layout adapts to mobile (1 card), tablet (2 cards), desktop (3 cards)
-- **SEC-001**: Card numbers masked (XXXX-XXXX-XXXX-1234), no full numbers in logs
-- **INT-001**: Support multiple currencies and languages
+- **REQ-001**: Users must authenticate before accessing card management features
+- **REQ-002**: Card number must be 16 digits (basic format validation)
+- **REQ-003**: Maximum 10 cards per user account (business constraint)
+- **REQ-004**: Duplicate card prevention - same last 4 digits cannot be added twice to same account
+- **REQ-005**: Card removal must be soft-delete (preserve audit trail)
+- **REQ-006**: All card operations must be logged to audit trail (HU-002 integration)
+- **REQ-007**: Card operations must complete in <1000ms (MVP performance target)
 
-### Constraints
-- **CON-001**: Maximum 3 cards displayed by default
-- **CON-002**: Card data cached in Redis for 5 minutes (TTL: 300s)
-- **CON-003**: Must use existing fraud evaluation service for transfer validation
-- **CON-004**: Transfer amounts must pass fraud detection before execution
-- **CON-005**: All card operations logged to audit trail (MongoDB)
+### Security Requirements (MVP)
 
-### Architecture Patterns
-- **PAT-001**: Follow Clean Architecture (domain/application/infrastructure separation)
-- **PAT-002**: Implement Repository Pattern for card data access
-- **PAT-003**: Use Zustand for React state management (existing pattern)
-- **PAT-004**: Use axios interceptors for API authentication
-- **PAT-005**: E2E tests must use Playwright role-based locators (getByRole, getByLabel)
+- **SEC-001**: CVV is NOT stored (input validation only, discarded after form submission)
+- **SEC-002**: Card numbers stored as plain text in MongoDB (encrypted database volume)
+- **SEC-003**: Only last 4 digits of card shown in UI (masked display)
+- **SEC-004**: Card data access requires user authentication + authorization
+- **SEC-005**: Basic rate limiting on card operations (10 requests/minute per user)
 
-### Testing Standards
-- **TST-001**: All domain logic tested in `tests/unit/` (pytest)
-- **TST-002**: Backend API endpoints tested in `tests/integration/` (pytest)
-- **TST-003**: Frontend components tested in `frontend/user-app/src/__tests__/` (Vitest)
-- **TST-004**: E2E user workflows tested in `tests-e2e/tests/` (Playwright)
-- **TST-005**: Minimum code coverage: 70%, target: 95%
-- **TST-006**: All tests must pass locally before PR submission
+**Post-MVP Security Enhancements:**
+- PCI-DSS tokenization
+- Field-level encryption
+- Advanced rate limiting and fraud detection
+
+### Data Requirements
+
+- **DAT-001**: Card schema: card_number (plain text, 16 digits), card_holder_name, expiry_date, card_type, nickname (optional), status, user_id, created_at, updated_at
+- **DAT-002**: Card status enum: ACTIVE, INACTIVE
+- **DAT-003**: Card type enum: DEBIT, CREDIT
+- **DAT-004**: Expiry date format: MM/YY (basic format validation, no future date check in MVP)
+- **DAT-005**: Card holder name: 3-50 characters (alphanumeric + spaces allowed)
+
+### Technical Constraints
+
+- **CON-001**: Must use existing MongoDB for card persistence
+- **CON-002**: Must integrate with Redis cache for user card lists
+- **CON-003**: Must use FastAPI for backend endpoints
+- **CON-004**: Must use React + TypeScript for frontend
+- **CON-005**: Must maintain Clean Architecture (domain → application → infrastructure)
+- **CON-006**: Domain layer must have zero framework dependencies
+- **CON-007**: Test coverage must remain ≥70% (current: 95%)
+
+### Architectural Guidelines
+
+- **GUD-001**: Follow hexagonal architecture - domain models independent of FastAPI/MongoDB
+- **GUD-002**: Apply Strategy Pattern for card validation rules
+- **GUD-003**: Use Repository Pattern for data access abstraction
+- **GUD-004**: Implement Dependency Injection for testability
+- **GUD-005**: All business logic in domain layer, orchestration in application layer
+- **GUD-006**: Infrastructure adapters implement ports defined in application layer
+
+### MVP Patterns
+
+- **PAT-001**: Audit logging - all card operations emit events to audit_logs collection
+- **PAT-002**: Soft delete pattern - card removal sets status to INACTIVE, preserves data
+- **PAT-003**: Simple duplicate detection - compare last 4 digits + user_id
 
 ## 2. Implementation Steps
 
-### Phase 1: Backend Domain & Infrastructure Layer
+### Phase 1: Domain Layer - Card Models & Basic Validation (RED → GREEN → REFACTOR)
 
-**GOAL-001**: Implement card data models, repository interfaces, and MongoDB adapters for persistent card storage and retrieval.
+**GOAL-001**: Create pure domain models with basic validation for card management
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | Create Card domain entity with immutable dataclass | | |
-| TASK-002 | Create CardStatus enum (ACTIVE, BLOCKED, EXPIRED, PENDING) | | |
-| TASK-003 | Create TransferRequest domain model with validation | | |
-| TASK-004 | Create CardRepository abstract interface in application/ports/ | | |
-| TASK-005 | Implement MongoDBCardAdapter in infrastructure/ | | |
-| TASK-006 | Create Redis card cache adapter with TTL=300s | | |
-| TASK-007 | Add card collections to MongoDB init script | | |
-| TASK-008 | Write unit tests for Card models (95% coverage) | | |
-| TASK-009 | Write integration tests for CardRepository implementations | | |
+| TASK-001 | **[RED]** Write failing tests for Card entity (frozen dataclass with immutability) | | |
+| TASK-002 | **[RED]** Write failing tests for card number format validation (16 digits) | | |
+| TASK-003 | **[RED]** Write failing tests for expiry date format validation (MM/YY) | | |
+| TASK-004 | **[RED]** Write failing tests for card holder name validation (3-50 chars) | | |
+| TASK-005 | **[RED]** Write failing tests for card type enum (DEBIT/CREDIT) | | |
+| TASK-006 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-007 | **[GREEN]** Implement Card entity as frozen dataclass with all fields | | |
+| TASK-008 | **[GREEN]** Implement basic card number validator (16 digits, numeric) | | |
+| TASK-009 | **[GREEN]** Implement expiry date validator (MM/YY format) | | |
+| TASK-010 | **[GREEN]** Implement card holder name validator (length check) | | |
+| TASK-011 | **[GREEN]** Implement CardType and CardStatus enums | | |
+| TASK-012 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-013 | **[REFACTOR]** Add comprehensive docstrings to all domain models | | |
+| TASK-014 | **[REFACTOR]** Extract validation logic into separate validator functions | | |
+| TASK-015 | **[REFACTOR]** Add null checks and error messages | | |
+| TASK-016 | **[REFACTOR]** Ensure all methods <20 lines, apply SRP | | |
+| TASK-017 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 1 Completion Criteria**:
-- ✅ Card models immutable and serializable
-- ✅ Repository interface defined with methods: get_user_cards(user_id, limit=3), get_card_by_id(card_id), update_card_status(card_id, status)
-- ✅ MongoDB adapter implements repository with queries in <100ms
-- ✅ Redis adapter returns cached cards or fetches from MongoDB on miss
-- ✅ All unit/integration tests passing with 95%+ coverage
-- ✅ No framework imports in domain layer
+**Files Created:**
+- `services/fraud-evaluation-service/src/domain/models/card.py` - Card entity
+- `services/fraud-evaluation-service/src/domain/validation/card_validators.py` - Basic validation functions
+- `services/fraud-evaluation-service/src/domain/enums.py` [MODIFIED] - Add CardType, CardStatus enums
+- `tests/unit/test_domain_card.py` - Domain model tests (10+ tests expected)
 
 ---
 
-### Phase 2: Backend Application Layer & Use Cases
+### Phase 2: Application Layer - Card Use Cases (RED → GREEN → REFACTOR)
 
-**GOAL-002**: Implement use cases that orchestrate card retrieval, transfer validation, and blocking operations.
+**GOAL-002**: Implement use cases for card CRUD operations with ports/interfaces
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-010 | Create GetUserCardsUseCase (query, limit enforcement, permission check) | | |
-| TASK-011 | Create GetCardDetailUseCase with full transaction history | | |
-| TASK-012 | Create TransferMoneyUseCase with fraud evaluation integration | | |
-| TASK-013 | Create BlockCardUseCase with status update | | |
-| TASK-014 | Create GetCardTransactionsUseCase with pagination | | |
-| TASK-015 | Implement permission checking (403 Forbidden for unauthorized users) | | |
-| TASK-016 | Implement balance validation (error if insufficient funds) | | |
-| TASK-017 | Add EventPublisher dependency for card events (CARD_BLOCKED, TRANSFER_INITIATED) | | |
-| TASK-018 | Write comprehensive use case tests with mocked repositories | | |
+| TASK-018 | **[RED]** Write failing tests for AddCardUseCase (happy path + validation failures) | | |
+| TASK-019 | **[RED]** Write failing tests for RemoveCardUseCase (soft delete) | | |
+| TASK-020 | **[RED]** Write failing tests for ListUserCardsUseCase (basic list) | | |
+| TASK-021 | **[RED]** Write failing tests for GetCardDetailsUseCase (by card_id) | | |
+| TASK-022 | **[RED]** Write failing tests for duplicate prevention (last 4 digits) | | |
+| TASK-023 | **[RED]** Write failing tests for max cards limit (10 cards) | | |
+| TASK-024 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-025 | **[GREEN]** Define CardRepository port with: save, find_by_id, find_by_user_id, soft_delete | | |
+| TASK-026 | **[GREEN]** Implement AddCardUseCase with validation, duplicate check, limit enforcement | | |
+| TASK-027 | **[GREEN]** Implement RemoveCardUseCase with soft delete | | |
+| TASK-028 | **[GREEN]** Implement ListUserCardsUseCase | | |
+| TASK-029 | **[GREEN]** Implement GetCardDetailsUseCase | | |
+| TASK-030 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-031 | **[REFACTOR]** Add detailed error messages for validation failures | | |
+| TASK-032 | **[REFACTOR]** Add comprehensive docstrings with usage examples | | |
+| TASK-033 | **[REFACTOR]** Add audit event emission for all operations | | |
+| TASK-034 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 2 Completion Criteria**:
-- ✅ All use cases follow dependency injection pattern
-- ✅ GetUserCardsUseCase enforces limit=3 and permission checks
-- ✅ TransferMoneyUseCase calls fraud evaluation service and validates balance
-- ✅ All use cases publish events to RabbitMQ for audit trail
-- ✅ Error handling returns proper status codes (403, 400, 422)
-- ✅ 95%+ test coverage with mocked dependencies
+**Files Created:**
+- `services/fraud-evaluation-service/src/application/ports/card_repository.py` - Repository interface
+- `services/fraud-evaluation-service/src/application/use_cases/add_card.py` - AddCardUseCase
+- `services/fraud-evaluation-service/src/application/use_cases/remove_card.py` - RemoveCardUseCase
+- `services/fraud-evaluation-service/src/application/use_cases/list_user_cards.py` - ListUserCardsUseCase
+- `services/fraud-evaluation-service/src/application/use_cases/get_card_details.py` - GetCardDetailsUseCase
+- `tests/unit/test_use_cases_card.py` - Use case tests (15+ tests expected)
 
 ---
 
-### Phase 3: Backend FastAPI Routes & Validation
+### Phase 3: Infrastructure Layer - Adapters (RED → GREEN → REFACTOR)
 
-**GOAL-003**: Create REST API endpoints with Pydantic validation, authentication, and error handling.
+**GOAL-003**: Implement concrete adapters for MongoDB and audit logging
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-019 | Create CardResponse Pydantic model (masked number, balance, expiry, status) | | |
-| TASK-020 | Create TransferRequest Pydantic model with validation rules | | |
-| TASK-021 | Add GET /api/v1/cards endpoint with limit query param | | |
-| TASK-022 | Add GET /api/v1/cards/{card_id} endpoint | | |
-| TASK-023 | Add GET /api/v1/cards/{card_id}/transactions endpoint with pagination | | |
-| TASK-024 | Add POST /api/v1/transfers endpoint (triggers fraud evaluation) | | |
-| TASK-025 | Add PUT /api/v1/cards/{card_id}/block endpoint | | |
-| TASK-026 | Add authentication middleware (verify JWT token, extract user_id) | | |
-| TASK-027 | Add error handlers for 403 Forbidden, 400 Bad Request, 422 Unprocessable Entity | | |
-| TASK-028 | Write route integration tests with test client | | |
+| TASK-035 | **[RED]** Write failing integration tests for MongoCardRepository (CRUD operations) | | |
+| TASK-036 | **[RED]** Write failing tests for audit event emission on card operations | | |
+| TASK-037 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-038 | **[GREEN]** Implement MongoCardRepository with cards collection schema | | |
+| TASK-039 | **[GREEN]** Implement AuditEventPublisher for card operations | | |
+| TASK-040 | **[GREEN]** Add MongoDB indexes: user_id, last_four_digits + user_id (unique), created_at | | |
+| TASK-041 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-042 | **[REFACTOR]** Add connection pooling and retry logic for MongoDB | | |
+| TASK-043 | **[REFACTOR]** Add comprehensive logging (mask card numbers in logs) | | |
+| TASK-044 | **[REFACTOR]** Add error handling for database failures | | |
+| TASK-045 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 3 Completion Criteria**:
-- ✅ All endpoints return 202 Accepted for async operations (transfers)
-- ✅ All endpoints return 200 OK for sync operations (get cards)
-- ✅ Card numbers masked in responses (XXXX-XXXX-XXXX-1234)
-- ✅ Authentication required for all endpoints (401 if missing token)
-- ✅ Proper HTTP status codes: 200, 202, 400, 403, 422, 500
-- ✅ Swagger UI docs auto-generated and correct
-- ✅ Integration tests verify full request/response cycle
+**Files Created:**
+- `services/fraud-evaluation-service/src/infrastructure/adapters/mongo_card_repository.py` - MongoDB adapter
+- `services/fraud-evaluation-service/src/infrastructure/adapters/audit_publisher.py` - Audit event publisher
+- `tests/integration/test_card_repository.py` - Integration tests (8+ tests)
 
 ---
 
-### Phase 4: Frontend Components & Pages
+### Phase 4: API Gateway - REST Endpoints (RED → GREEN → REFACTOR)
 
-**GOAL-004**: Build React components for card display, transfer form, transaction history, and responsive layouts.
+**GOAL-004**: Create FastAPI endpoints for card management with validation and error handling
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-029 | Create CardCard component (displays single card with details) | | |
-| TASK-030 | Create CardStatus badge component (ACTIVE green, BLOCKED red) | | |
-| TASK-031 | Create CardActions component (4 action buttons: View Txns, Transfer, Block, Details) | | |
-| TASK-032 | Create CardsList component (displays up to 3 cards, handles empty state) | | |
-| TASK-033 | Create TransactionHistory component (modal/page with transaction list) | | |
-| TASK-034 | Create TransferForm component (7 input fields, validation, submit) | | |
-| TASK-035 | Create TransferConfirmation component (success message with details) | | |
-| TASK-036 | Create CardsPage component (main Inicio page with cards list) | | |
-| TASK-037 | Implement loading states (skeleton loaders or spinners) | | |
-| TASK-038 | Implement error boundaries and error messages | | |
-| TASK-039 | Implement responsive CSS (Tailwind: mobile 1 card, tablet 2 cards, desktop 3) | | |
-| TASK-040 | Add accessibility attributes (aria-labels, aria-roles) | | |
+| TASK-046 | **[RED]** Write failing API tests for POST /api/v1/cards (add card) | | |
+| TASK-047 | **[RED]** Write failing API tests for DELETE /api/v1/cards/{id} (remove card) | | |
+| TASK-048 | **[RED]** Write failing API tests for GET /api/v1/cards (list user cards) | | |
+| TASK-049 | **[RED]** Write failing API tests for GET /api/v1/cards/{id} (card details) | | |
+| TASK-050 | **[RED]** Write failing tests for validation error responses (400, 409) | | |
+| TASK-051 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-052 | **[GREEN]** Create Pydantic schemas: AddCardRequest, CardResponse, CardListResponse | | |
+| TASK-053 | **[GREEN]** Implement POST /api/v1/cards endpoint with validation | | |
+| TASK-054 | **[GREEN]** Implement DELETE /api/v1/cards/{id} endpoint | | |
+| TASK-055 | **[GREEN]** Implement GET /api/v1/cards endpoint | | |
+| TASK-056 | **[GREEN]** Implement GET /api/v1/cards/{id} endpoint | | |
+| TASK-057 | **[GREEN]** Add authentication dependency (verify user_id from JWT) | | |
+| TASK-058 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-059 | **[REFACTOR]** Add detailed OpenAPI documentation for all endpoints | | |
+| TASK-060 | **[REFACTOR]** Add request/response examples in Swagger | | |
+| TASK-061 | **[REFACTOR]** Implement proper HTTP status codes (201, 204, 409) | | |
+| TASK-062 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 4 Completion Criteria**:
-- ✅ All components use React.FC with TypeScript types
-- ✅ All components styled with Tailwind CSS (no inline styles)
-- ✅ Loading states display while fetching (2s target)
-- ✅ Responsive layout tested on mobile/tablet/desktop
-- ✅ Error messages display with retry button
-- ✅ Card numbers masked in all components
-- ✅ All ARIA attributes present and correct
+**Files Created:**
+- `services/api-gateway/src/routes/cards.py` - Card endpoints
+- `services/api-gateway/src/schemas/card_schemas.py` - Pydantic models
+- `services/api-gateway/src/dependencies/auth.py` - Authentication dependency
+- `tests/integration/test_api_cards.py` - API integration tests (15+ tests)
 
 ---
 
-### Phase 5: Frontend State Management & API Integration
+### Phase 5: Frontend - Card Management UI (RED → GREEN → REFACTOR)
 
-**GOAL-005**: Implement Zustand store for card data, fetch from API, handle errors, and update UI.
+**GOAL-005**: Build basic React components for card management in user-app
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-041 | Create cardStore.ts with Zustand (state: cards, loading, error, transfers) | | |
-| TASK-042 | Implement fetchUserCards action (calls GET /api/v1/cards with limit=3) | | |
-| TASK-043 | Implement fetchCardTransactions action (calls GET /api/v1/cards/{card_id}/transactions) | | |
-| TASK-044 | Implement transferMoney action (POST /api/v1/transfers, polls for fraud evaluation) | | |
-| TASK-045 | Implement blockCard action (PUT /api/v1/cards/{card_id}/block) | | |
-| TASK-046 | Add error handling middleware (retry on network errors, display messages) | | |
-| TASK-047 | Add axios interceptor for authentication header injection | | |
-| TASK-048 | Implement polling for transfer status (check fraud evaluation result) | | |
-| TASK-049 | Create custom hooks: useCards(), useCardTransactions(), useTransfer() | | |
-| TASK-050 | Write Vitest unit tests for store actions and selectors | | |
+| TASK-063 | **[RED]** Write failing Vitest tests for AddCardForm component | | |
+| TASK-064 | **[RED]** Write failing tests for CardList component | | |
+| TASK-065 | **[RED]** Write failing tests for CardItem component | | |
+| TASK-066 | **[RED]** Write failing tests for RemoveCardModal component | | |
+| TASK-067 | **[RED]** Write failing tests for card API service (fetch, create, delete) | | |
+| TASK-068 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-069 | **[GREEN]** Create AddCardForm with basic validation | | |
+| TASK-070 | **[GREEN]** Create CardList component (simple list, no pagination) | | |
+| TASK-071 | **[GREEN]** Create CardItem component with masked card number (last 4 digits) | | |
+| TASK-072 | **[GREEN]** Create RemoveCardModal with confirmation | | |
+| TASK-073 | **[GREEN]** Implement cardService API client (fetch API) | | |
+| TASK-074 | **[GREEN]** Add Cards page route to user-app | | |
+| TASK-075 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-076 | **[REFACTOR]** Add form validation feedback (error messages) | | |
+| TASK-077 | **[REFACTOR]** Add loading states | | |
+| TASK-078 | **[REFACTOR]** Add success/error toast notifications | | |
+| TASK-079 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 5 Completion Criteria**:
-- ✅ Zustand store centralized, no prop drilling
-- ✅ All API calls include Authorization header
-- ✅ Error states display user-friendly messages
-- ✅ Loading states show spinners (max 2s)
-- ✅ Polling for transfer result works (max 10s, check every 1s)
-- ✅ Store mutations are immutable (no direct state modification)
-- ✅ 85%+ test coverage for store actions
+**Files Created:**
+- `frontend/user-app/src/pages/Cards.tsx` - Main cards page
+- `frontend/user-app/src/components/cards/AddCardForm.tsx` - Add card form
+- `frontend/user-app/src/components/cards/CardList.tsx` - Card list
+- `frontend/user-app/src/components/cards/CardItem.tsx` - Individual card display
+- `frontend/user-app/src/components/cards/RemoveCardModal.tsx` - Removal confirmation
+- `frontend/user-app/src/services/cardService.ts` - API client
+- `frontend/user-app/src/components/cards/__tests__/` - Component tests (10+ tests)
 
 ---
 
-### Phase 6: Frontend Forms & Validation
+### Phase 6: E2E Tests & Integration (RED → GREEN → REFACTOR)
 
-**GOAL-006**: Implement form validation, submission handling, and error feedback for transfer and card management.
+**GOAL-006**: Create basic end-to-end tests with Playwright
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-051 | Create TransferForm with React Hook Form validation | | |
-| TASK-052 | Implement 7 form fields with required/optional rules | | |
-| TASK-053 | Add real-time validation feedback (error messages under fields) | | |
-| TASK-054 | Disable submit button until all required fields valid | | |
-| TASK-055 | Add error handling for insufficient balance (display available_balance) | | |
-| TASK-056 | Add error handling for blocked card (disable transfer button, show tooltip) | | |
-| TASK-057 | Implement form submission with fraud evaluation API call | | |
-| TASK-058 | Show confirmation modal with transfer details + success message | | |
-| TASK-059 | Add back navigation to return to cards list | | |
-| TASK-060 | Write Vitest tests for form validation and submission | | |
+| TASK-080 | **[RED]** Write failing E2E test for add card happy path | | |
+| TASK-081 | **[RED]** Write failing E2E test for add card validation failure | | |
+| TASK-082 | **[RED]** Write failing E2E test for remove card flow | | |
+| TASK-083 | ⏸️ **APPROVAL GATE**: Present RED phase results, await user approval | | |
+| TASK-084 | **[GREEN]** Implement E2E test for complete add card flow | | |
+| TASK-085 | **[GREEN]** Implement E2E test for validation errors | | |
+| TASK-086 | **[GREEN]** Implement E2E test for card removal | | |
+| TASK-087 | **[GREEN]** Add test fixtures for card data | | |
+| TASK-088 | ⏸️ **APPROVAL GATE**: Present GREEN phase results, await user approval | | |
+| TASK-089 | **[REFACTOR]** Extract Page Object Models for card pages | | |
+| TASK-090 | **[REFACTOR]** Add reusable tasks for common card operations | | |
+| TASK-091 | ⏸️ **APPROVAL GATE**: Present REFACTOR phase results, await user approval | | |
 
-**Phase 6 Completion Criteria**:
-- ✅ Form validates all required fields before submit
-- ✅ Form shows inline error messages (red text under inputs)
-- ✅ Submit button disabled while loading
-- ✅ Success confirmation shows Monto, Usuario, Estado, Risk Score
-- ✅ Error message for insufficient balance includes available amount
-- ✅ Blocked card shows disabled transfer button with tooltip
-- ✅ Form clears after successful submission
+**Files Created:**
+- `tests-e2e/tests/cards.spec.ts` - E2E test suite
+- `tests-e2e/pages/CardsPage.ts` - Page Object Model
+- `tests-e2e/tasks/cardTasks.ts` - Reusable card operations
+- `tests-e2e/fixtures/cardData.json` - Test fixtures
 
 ---
 
-### Phase 7: Database Initialization & Migrations
+### Phase 7: Documentation & Deployment Preparation
 
-**GOAL-007**: Set up MongoDB collections for cards, transactions, and audit logs.
-
-| Task | Description | Completed | Date |
-|------|-------------|-----------|------|
-| TASK-061 | Create MongoDB migration script (init-db.js or Python equivalent) | | |
-| TASK-062 | Create collections: cards, card_transactions, card_audits | | |
-| TASK-063 | Define indexes: cards(user_id), card_transactions(card_id, timestamp), card_audits(card_id) | | |
-| TASK-064 | Insert sample data: 5 test users with 1-3 cards each | | |
-| TASK-065 | Verify indexes are created (use db.collection.getIndexes()) | | |
-
-**Phase 7 Completion Criteria**:
-- ✅ Collections created with proper schema validation
-- ✅ Indexes created for fast queries (<100ms)
-- ✅ Sample data inserted for testing
-- ✅ Migration script idempotent (safe to run multiple times)
-
----
-
-### Phase 8: E2E Testing with Playwright
-
-**GOAL-008**: Write full user workflow tests verifying card display, transactions, transfers, and error scenarios.
+**GOAL-007**: Complete documentation and deployment preparation
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-066 | Create tests-e2e/tests/cards.spec.ts file | | |
-| TASK-067 | Test: View cards on dashboard (3 cards display with details) | | |
-| TASK-068 | Test: Card with blocked status shows red badge + disabled transfer | | |
-| TASK-069 | Test: Click View Transactions opens modal with sorted transactions | | |
-| TASK-070 | Test: Click Transfer Money opens transfer form | | |
-| TASK-071 | Test: Complete transfer with valid data shows confirmation | | |
-| TASK-072 | Test: Cannot transfer from blocked card (button disabled) | | |
-| TASK-073 | Test: More than 3 cards shows pagination/View All link | | |
-| TASK-074 | Test: No cards shows "No cards found" with request button | | |
-| TASK-075 | Test: Insufficient balance shows error message with available amount | | |
-| TASK-076 | Test: Load time <2 seconds (measure with navigation.timing) | | |
-| TASK-077 | Test: Responsive layout (mobile 1 card, tablet 2, desktop 3) | | |
-| TASK-078 | Test: Accessibility (ARIA labels, keyboard navigation, screen reader) | | |
+| TASK-092 | Create MongoDB migration script for cards collection | | |
+| TASK-093 | Update API documentation (Swagger/OpenAPI) | | |
+| TASK-094 | Update README.md with card management section | | |
+| TASK-095 | Create basic user guide for card management feature | | |
+| TASK-096 | Final integration test - full flow from UI to DB | | |
 
-**Phase 8 Completion Criteria**:
-- ✅ All tests use role-based locators (getByRole, getByLabel, getByText)
-- ✅ Tests use test.step() for readability
-- ✅ Tests use auto-retrying assertions (toHaveText, toBeVisible)
-- ✅ All tests pass in chromium, firefox, webkit
-- ✅ No hard-coded waits (rely on Playwright auto-waiting)
-- ✅ Screenshots captured on failure for debugging
-- ✅ Tests complete in <5 minutes total
-
----
-
-### Phase 9: Integration Testing & Fraud Evaluation
-
-**GOAL-009**: Test full integration of card transfers with fraud detection pipeline.
-
-| Task | Description | Completed | Date |
-|------|-------------|-----------|------|
-| TASK-079 | Write integration test: Transfer triggers fraud evaluation | | |
-| TASK-080 | Verify fraud result blocks high-risk transfers | | |
-| TASK-081 | Verify low-risk transfers auto-approved | | |
-| TASK-082 | Verify medium-risk transfers queued for human review | | |
-| TASK-083 | Test transfer with GPS location triggers location strategy | | |
-| TASK-084 | Test transfer with unrecognized device triggers device strategy | | |
-| TASK-085 | Verify audit trail records transfer with timestamp + actor | | |
-
-**Phase 9 Completion Criteria**:
-- ✅ All integration tests pass with docker-compose running
-- ✅ Fraud evaluation service correctly evaluates transfers
-- ✅ RabbitMQ events published for each transfer
-- ✅ MongoDB audit trail records all operations
-- ✅ Redis cache populated with card data
-
----
-
-### Phase 10: Documentation & Code Review
-
-**GOAL-010**: Document API endpoints, component architecture, and deployment instructions.
-
-| Task | Description | Completed | Date |
-|------|-------------|-----------|------|
-| TASK-086 | Update API Swagger docs with new card endpoints | | |
-| TASK-087 | Create frontend component documentation (Storybook optional) | | |
-| TASK-088 | Write README for card feature in frontend/user-app/README.md | | |
-| TASK-089 | Add curl examples for card API endpoints in docs/API.md | | |
-| TASK-090 | Create PR template checklist items for card feature | | |
-| TASK-091 | Code review: Ensure Clean Architecture principles followed | | |
-| TASK-092 | Code review: Verify test coverage 95%+ | | |
-| TASK-093 | Code review: Check accessibility compliance | | |
-
-**Phase 10 Completion Criteria**:
-- ✅ All endpoints documented in Swagger with examples
-- ✅ Frontend component architecture documented
-- ✅ README includes setup, usage, and troubleshooting
-- ✅ API examples show all scenarios (success, errors, edge cases)
-- ✅ PR ready for merge with all approvals
+**Files Created:**
+- `docs/CARD_MANAGEMENT.md` - Feature documentation
+- `scripts/migrations/001_create_cards_collection.py` - MongoDB migration
+- `docs/PCI_DSS_CHECKLIST.md` - Compliance documentation
+- `docs/DEPLOYMENT_RUNBOOK_HU015.md` - Deployment guide
 
 ---
 
 ## 3. Alternatives
 
-- **ALT-001**: Store card data in Redis only (rejected: persistence required for audit trail, MongoDB provides immutability)
-- **ALT-002**: Fetch all user cards without limit (rejected: REQ-001 specifies max 3, pagination on backend provides better performance)
-- **ALT-003**: Use GraphQL for card queries (rejected: existing project uses REST API, REST simpler for this feature)
-- **ALT-004**: Implement transfer as synchronous call (rejected: follows async-first pattern already in fraud evaluation service, 202 Accepted required)
-- **ALT-005**: Store full card numbers (rejected: SEC-001 requires masking, PCI DSS compliance violation)
+### Alternative Approaches Considered
+
+- **ALT-001**: **Synchronous card validation** - Rejected in favor of async approach for better UX and scalability. Backend validation happens in <500ms, so async not needed initially.
+
+- **ALT-002**: **Client-side only validation** - Rejected due to security concerns. All validation must occur server-side; client validation is only for UX improvement.
+
+- **ALT-003**: **Implement PCI-DSS compliance in MVP** - Deferred to post-MVP to accelerate delivery. Database-level encryption provides baseline security.
+
+- **ALT-004**: **Use third-party card management SaaS** - Rejected to maintain control over data and reduce external dependencies. Tokenization service is acceptable limited dependency.
+
+- **ALT-005**: **Hard delete cards** - Rejected in favor of soft delete to maintain audit trail and comply with HU-002 requirements.
+
+- **ALT-006**: **Unlimited cards per user** - Rejected to prevent abuse and maintain reasonable system load. 10-card limit is industry standard.
 
 ## 4. Dependencies
 
-- **DEP-001**: Existing fraud evaluation service (services/fraud-evaluation-service) must be running for transfer validation
-- **DEP-002**: MongoDB 7.0+ for card data persistence
-- **DEP-003**: Redis 7.2+ for card data caching
-- **DEP-004**: RabbitMQ 3.12+ for event publishing
-- **DEP-005**: FastAPI 0.104+ already installed in project
-- **DEP-006**: React 18.3+ with TypeScript already in frontend
-- **DEP-007**: Zustand state management already in use
-- **DEP-008**: Playwright already configured for E2E tests
-- **DEP-009**: pytest with coverage already configured
-- **DEP-010**: Docker & docker-compose for running services
+### External Dependencies (MVP)
+
+- **DEP-001**: None for MVP - all dependencies deferred to post-MVP phase
+
+### Internal Dependencies
+
+- **DEP-004**: **HU-002 Audit Trail** - Card operations must emit events to existing audit logging system.
+
+- **DEP-005**: **HU-016 Card List View** - Frontend dependency mentioned in HU-015, but appears to be part of same feature (list is needed for add/remove).
+
+- **DEP-006**: **Authentication System** - Existing JWT authentication must be functional for user identification.
+
+- **DEP-007**: **MongoDB Setup** - Database must be configured with encryption at rest before storing card data.
+
+### Library Dependencies (New)
+
+- **DEP-008**: None - use built-in HTML5 form validation and basic JavaScript validation in MVP
 
 ## 5. Files
 
-### Backend Files to Create/Modify
+### Backend Files (New/Modified)
 
-**Domain Layer (Pure Business Logic - No Framework Imports)**
-- **FILE-001**: `services/fraud-evaluation-service/src/domain/card_models.py` - Card, CardStatus enums, TransferRequest dataclasses
-- **FILE-002**: `services/fraud-evaluation-service/src/domain/card_strategies.py` - CardBlockingStrategy, CardBalanceValidation (if needed)
+**Domain Layer**
+- **FILE-001**: `services/fraud-evaluation-service/src/domain/models/card.py` - Card entity model
+- **FILE-002**: `services/fraud-evaluation-service/src/domain/validation/card_validators.py` - Basic validation functions
+- **FILE-003**: `services/fraud-evaluation-service/src/domain/enums.py` [MODIFIED] - Add CardType, CardStatus enums
 
-**Application Layer (Use Cases & Ports)**
-- **FILE-003**: `services/fraud-evaluation-service/src/application/ports/card_repository.py` - CardRepository interface
-- **FILE-004**: `services/fraud-evaluation-service/src/application/ports/card_cache.py` - CardCacheService interface
-- **FILE-005**: `services/fraud-evaluation-service/src/application/use_cases/get_user_cards.py` - GetUserCardsUseCase
-- **FILE-006**: `services/fraud-evaluation-service/src/application/use_cases/get_card_transactions.py` - GetCardTransactionsUseCase
-- **FILE-007**: `services/fraud-evaluation-service/src/application/use_cases/transfer_money.py` - TransferMoneyUseCase
-- **FILE-008**: `services/fraud-evaluation-service/src/application/use_cases/block_card.py` - BlockCardUseCase
+**Application Layer**
+- **FILE-004**: `services/fraud-evaluation-service/src/application/ports/card_repository.py` - Repository interface
+- **FILE-005**: `services/fraud-evaluation-service/src/application/use_cases/add_card.py` - Add card use case
+- **FILE-006**: `services/fraud-evaluation-service/src/application/use_cases/remove_card.py` - Remove card use case
+- **FILE-007**: `services/fraud-evaluation-service/src/application/use_cases/list_user_cards.py` - List cards use case
+- **FILE-008**: `services/fraud-evaluation-service/src/application/use_cases/get_card_details.py` - Get card use case
 
-**Infrastructure Layer (Adapters)**
-- **FILE-009**: `services/fraud-evaluation-service/src/adapters/card_mongodb_adapter.py` - MongoDBCardRepository
-- **FILE-010**: `services/fraud-evaluation-service/src/adapters/card_redis_adapter.py` - RedisCardCache
+**Infrastructure Layer**
+- **FILE-009**: `services/fraud-evaluation-service/src/infrastructure/adapters/mongo_card_repository.py` - MongoDB adapter
+- **FILE-010**: `services/fraud-evaluation-service/src/infrastructure/adapters/audit_publisher.py` - Audit event publisher
 
-**API Gateway (FastAPI Routes)**
-- **FILE-011**: `services/api-gateway/src/routes/cards.py` - Card endpoints (GET, POST, PUT)
-- **FILE-012**: `services/api-gateway/src/models/card_models.py` - Pydantic models (CardResponse, TransferRequest)
+**API Gateway**
+- **FILE-011**: `services/api-gateway/src/routes/cards.py` - Card API endpoints
+- **FILE-012**: `services/api-gateway/src/schemas/card_schemas.py` - Pydantic request/response schemas
+- **FILE-013**: `services/api-gateway/src/dependencies/auth.py` [MODIFIED] - Add card-specific auth checks
+- **FILE-014**: `services/api-gateway/src/main.py` [MODIFIED] - Mount card routes
 
-**Testing**
-- **FILE-013**: `tests/unit/test_card_models.py` - Domain model tests
-- **FILE-014**: `tests/unit/test_get_user_cards_usecase.py` - Use case tests
-- **FILE-015**: `tests/unit/test_transfer_money_usecase.py` - Transfer use case tests
-- **FILE-016**: `tests/integration/test_card_endpoints.py` - API endpoint tests
-- **FILE-017**: `tests/fixtures/cards_sample_data.json` - Test card data
+### Frontend Files (New/Modified)
 
-### Frontend Files to Create/Modify
+**React Components**
+- **FILE-015**: `frontend/user-app/src/pages/Cards.tsx` - Main cards management page
+- **FILE-016**: `frontend/user-app/src/components/cards/AddCardForm.tsx` - Add card form component
+- **FILE-017**: `frontend/user-app/src/components/cards/CardList.tsx` - Card list component
+- **FILE-018**: `frontend/user-app/src/components/cards/CardItem.tsx` - Individual card display
+- **FILE-019**: `frontend/user-app/src/components/cards/RemoveCardModal.tsx` - Card removal confirmation
+- **FILE-020**: `frontend/user-app/src/services/cardService.ts` - Card API client service
+- **FILE-021**: `frontend/user-app/src/App.tsx` [MODIFIED] - Add Cards route
 
-**Components**
-- **FILE-018**: `frontend/user-app/src/components/CardCard.tsx` - Single card display component
-- **FILE-019**: `frontend/user-app/src/components/CardStatus.tsx` - Status badge component
-- **FILE-020**: `frontend/user-app/src/components/CardActions.tsx` - Action buttons component
-- **FILE-021**: `frontend/user-app/src/components/CardsList.tsx` - Cards list container
-- **FILE-022**: `frontend/user-app/src/components/TransactionHistory.tsx` - Transaction modal/page
-- **FILE-023**: `frontend/user-app/src/components/TransferForm.tsx` - Transfer form with React Hook Form
-- **FILE-024**: `frontend/user-app/src/components/TransferConfirmation.tsx` - Success confirmation component
+### Test Files (New)
 
-**Pages**
-- **FILE-025**: `frontend/user-app/src/pages/CardsPage.tsx` - Main cards page (Inicio)
+**Backend Tests**
+- **FILE-022**: `tests/unit/test_domain_card.py` - Domain model tests (10+ tests)
+- **FILE-023**: `tests/unit/test_use_cases_card.py` - Use case tests (15+ tests)
+- **FILE-024**: `tests/integration/test_card_repository.py` - Repository integration tests (8+ tests)
+- **FILE-025**: `tests/integration/test_api_cards.py` - API endpoint tests (12+ tests)
 
-**State Management**
-- **FILE-026**: `frontend/user-app/src/store/cardStore.ts` - Zustand store for card data
-- **FILE-027**: `frontend/user-app/src/hooks/useCards.ts` - Custom hook for card operations
-- **FILE-028**: `frontend/user-app/src/hooks/useCardTransactions.ts` - Custom hook for transactions
-- **FILE-029**: `frontend/user-app/src/hooks/useTransfer.ts` - Custom hook for transfers
+**Frontend Tests**
+- **FILE-026**: `frontend/user-app/src/components/cards/__tests__/AddCardForm.test.tsx` - Add card form tests
+- **FILE-027**: `frontend/user-app/src/components/cards/__tests__/CardList.test.tsx` - Card list tests
+- **FILE-028**: `frontend/user-app/src/components/cards/__tests__/CardItem.test.tsx` - Card item tests
+- **FILE-029**: `frontend/user-app/src/components/cards/__tests__/RemoveCardModal.test.tsx` - Modal tests
 
-**Services**
-- **FILE-030**: `frontend/user-app/src/services/cardService.ts` - Axios API client for cards
+**E2E Tests**
+- **FILE-030**: `tests-e2e/tests/cards.spec.ts` - End-to-end card management tests
+- **FILE-031**: `tests-e2e/pages/CardsPage.ts` - Cards page object model
+- **FILE-032**: `tests-e2e/tasks/cardTasks.ts` - Reusable card operation tasks
+- **FILE-033**: `tests-e2e/fixtures/cardData.json` - Test fixtures
 
-**Testing**
-- **FILE-031**: `frontend/user-app/src/__tests__/CardCard.test.tsx` - Component tests
-- **FILE-032**: `frontend/user-app/src/__tests__/CardsList.test.tsx` - Cards list tests
-- **FILE-033**: `frontend/user-app/src/__tests__/TransferForm.test.tsx` - Form validation tests
+### Configuration & Documentation Files
 
-**E2E Testing**
-- **FILE-034**: `tests-e2e/tests/cards.spec.ts` - Playwright E2E tests for card feature
-- **FILE-035**: `tests-e2e/pages/CardsPage.ts` - Page Object Model for cards
-
-### Database & Configuration
-- **FILE-036**: `docker-compose.yml` - Update with MongoDB collections initialization
-- **FILE-037**: `scripts/init-cards-db.js` - MongoDB migration script for card schema
+- **FILE-034**: `docs/CARD_MANAGEMENT.md` - Feature documentation
+- **FILE-035**: `scripts/migrations/001_create_cards_collection.py` - MongoDB migration script
 
 ## 6. Testing
 
-### Unit Tests (pytest)
-- **TEST-001**: `tests/unit/test_card_models.py` - Card entity immutability, validation
-- **TEST-002**: `tests/unit/test_card_status_enum.py` - Status enum values and transitions
-- **TEST-003**: `tests/unit/test_get_user_cards_usecase.py` - Query logic, limit enforcement, permission checks
-- **TEST-004**: `tests/unit/test_transfer_money_usecase.py` - Amount validation, balance check, fraud call
-- **TEST-005**: `tests/unit/test_block_card_usecase.py` - Status update, event publishing
-- **TEST-006**: `tests/unit/test_card_mongodb_adapter.py` - CRUD operations, query performance
-- **TEST-007**: `tests/unit/test_card_redis_adapter.py` - Cache hit/miss, TTL expiration
-- **TEST-008**: `tests/unit/test_card_routes.py` - Endpoint validation, authentication, error handling
-- **TEST-009**: `tests/unit/test_cardstore_zustand.ts` (Vitest) - Store selectors, actions
-- **TEST-010**: `tests/unit/test_useCards_hook.ts` (Vitest) - Custom hook behavior
+### Unit Tests (Backend)
 
-### Integration Tests (pytest)
-- **TEST-011**: `tests/integration/test_card_endpoints_full.py` - Full request/response cycle
-- **TEST-012**: `tests/integration/test_transfer_with_fraud.py` - Transfer triggers fraud evaluation
-- **TEST-013**: `tests/integration/test_card_audit_trail.py` - Operations recorded in MongoDB
+**Domain Layer Tests** (tests/unit/test_domain_card.py)
+- **TEST-001**: Card entity creation with valid data should succeed
+- **TEST-002**: Card entity is immutable (frozen dataclass)
+- **TEST-003**: Card number validation accepts 16 digits
+- **TEST-004**: Card number validation rejects non-16 digit input
+- **TEST-005**: Card number validation rejects non-numeric input
+- **TEST-006**: Expiry date validation accepts MM/YY format
+- **TEST-007**: Expiry date validation rejects invalid format
+- **TEST-008**: Card holder name validation rejects names <3 chars
+- **TEST-009**: Card holder name validation rejects names >50 chars
+- **TEST-010**: CardType enum has DEBIT and CREDIT values
+- **TEST-011**: CardStatus enum has ACTIVE and INACTIVE values
+
+**Application Layer Tests** (tests/unit/test_use_cases_card.py)
+- **TEST-012**: AddCardUseCase creates card with valid data
+- **TEST-013**: AddCardUseCase rejects duplicate card (same last 4 digits, 409 Conflict)
+- **TEST-014**: AddCardUseCase rejects when user has 10 cards (429 Too Many Requests)
+- **TEST-015**: AddCardUseCase validates card number format (16 digits)
+- **TEST-016**: AddCardUseCase emits audit event on success
+- **TEST-017**: RemoveCardUseCase performs soft delete (sets status to INACTIVE)
+- **TEST-018**: RemoveCardUseCase preserves card data for audit
+- **TEST-019**: RemoveCardUseCase emits audit event on removal
+- **TEST-020**: ListUserCardsUseCase returns only active cards
+- **TEST-021**: GetCardDetailsUseCase returns full card details
+- **TEST-022**: GetCardDetailsUseCase returns 404 for non-existent card
+- **TEST-023**: GetCardDetailsUseCase validates user owns card (authorization)
+- **TEST-024**: AddCardUseCase handles repository failures gracefully
+
+### Integration Tests (Backend)
+
+**Repository Tests** (tests/integration/test_card_repository.py)
+- **TEST-025**: MongoCardRepository saves card to database
+- **TEST-026**: MongoCardRepository retrieves card by ID
+- **TEST-027**: MongoCardRepository retrieves cards by user_id
+- **TEST-028**: MongoCardRepository enforces unique constraint on last_four + user_id
+- **TEST-029**: MongoCardRepository soft deletes card (updates status)
+- **TEST-030**: AuditEventPublisher emits card_added event
+- **TEST-031**: AuditEventPublisher emits card_removed event
+
+**API Tests** (tests/integration/test_api_cards.py)
+- **TEST-032**: POST /api/v1/cards returns 201 with valid data
+- **TEST-033**: POST /api/v1/cards returns 400 with invalid card number format
+- **TEST-034**: POST /api/v1/cards returns 409 when card already exists
+- **TEST-035**: POST /api/v1/cards returns 401 without authentication
+- **TEST-036**: DELETE /api/v1/cards/{id} returns 204 on success
+- **TEST-037**: DELETE /api/v1/cards/{id} returns 404 for non-existent card
+- **TEST-038**: DELETE /api/v1/cards/{id} returns 403 when user doesn't own card
+- **TEST-039**: GET /api/v1/cards returns user's card list
+- **TEST-040**: GET /api/v1/cards returns 200 with empty array for new user
+- **TEST-041**: GET /api/v1/cards/{id} returns card details
+- **TEST-042**: GET /api/v1/cards masks card number (shows last 4 digits)
+- **TEST-043**: API returns proper OpenAPI schema in /docs
+
+### Frontend Tests (Vitest)
+
+**Component Tests**
+- **TEST-044**: AddCardForm renders all input fields
+- **TEST-045**: AddCardForm validates card number (16 digits)
+- **TEST-046**: AddCardForm shows error for invalid card number
+- **TEST-047**: AddCardForm validates expiry date format (MM/YY)
+- **TEST-048**: AddCardForm validates card holder name length
+- **TEST-049**: AddCardForm submits valid form data
+- **TEST-050**: AddCardForm disables submit during API call
+- **TEST-051**: CardList renders list of cards
+- **TEST-052**: CardList displays masked card numbers
+- **TEST-053**: CardItem triggers remove action
+- **TEST-054**: RemoveCardModal shows confirmation message
+- **TEST-055**: RemoveCardModal calls delete API on confirm
+- **TEST-056**: RemoveCardModal closes without action on cancel
+- **TEST-057**: cardService makes correct API calls with auth headers
 
 ### E2E Tests (Playwright)
-- **TEST-014**: `tests-e2e/tests/cards.spec.ts` - View 3 cards on dashboard
-- **TEST-015**: `tests-e2e/tests/cards.spec.ts` - Block card visual indicators
-- **TEST-016**: `tests-e2e/tests/cards.spec.ts` - View transactions in modal
-- **TEST-017**: `tests-e2e/tests/cards.spec.ts` - Complete transfer workflow
-- **TEST-018**: `tests-e2e/tests/cards.spec.ts` - Cannot transfer from blocked card
-- **TEST-019**: `tests-e2e/tests/cards.spec.ts` - Pagination for >3 cards
-- **TEST-020**: `tests-e2e/tests/cards.spec.ts` - Empty state handling
-- **TEST-021**: `tests-e2e/tests/cards.spec.ts` - Insufficient balance error
-- **TEST-022**: `tests-e2e/tests/cards.spec.ts` - Load time <2 seconds
-- **TEST-023**: `tests-e2e/tests/cards.spec.ts` - Responsive layouts (mobile/tablet/desktop)
-- **TEST-024**: `tests-e2e/tests/cards.spec.ts` - WCAG 2.1 AA accessibility
 
-### Test Coverage Target
-- **MIN-COV**: 70% (minimum required)
-- **TARGET-COV**: 95% (project standard)
-- **BACKEND**: pytest with coverage.py, `pytest --cov=services/fraud-evaluation-service --cov=services/api-gateway --cov-fail-under=95`
-- **FRONTEND**: Vitest with c8, `npm test -- --coverage`
+**User Workflows**
+- **TEST-058**: User can add a new card with valid data
+- **TEST-059**: User sees validation error for invalid card number format
+- **TEST-060**: User can remove a card with confirmation
+- **TEST-061**: User can cancel card removal
+- **TEST-062**: User sees updated card list after add/remove
+- **TEST-063**: User sees masked card number (last 4 digits only)
+
+### Test Coverage Goals (MVP)
+
+- **Minimum Overall Coverage**: 70% (enforced by pytest)
+- **Target Coverage**: 80% (reduced from 95% for MVP scope)
+- **Critical Path Coverage**: 100% (card CRUD operations, audit logging)
+- **Domain Layer Coverage**: 100% (pure business logic must be fully tested)
 
 ## 7. Risks & Assumptions
 
-### Risks
-- **RISK-001**: Card data consistency if MongoDB and Redis get out of sync (Mitigation: Implement cache invalidation on write, set TTL=300s for eventual consistency)
-- **RISK-002**: Performance degradation if fetching cards for user with 100+ cards (Mitigation: Pagination on backend, limit=3 in query)
-- **RISK-003**: Fraud evaluation service unavailable during transfer (Mitigation: Retry logic with exponential backoff, queue transfer to RabbitMQ for retry)
-- **RISK-004**: Card number exposure in logs (Mitigation: Mask numbers before logging, use secrets masking in CI/CD)
-- **RISK-005**: Accessibility issues missed in testing (Mitigation: Use axe-core in E2E tests, manual WCAG review before release)
-- **RISK-006**: Race condition: concurrent block + transfer (Mitigation: Use MongoDB transactions or version fields, implement optimistic locking)
+### Technical Risks (MVP)
 
-### Assumptions
-- **ASSUMPTION-001**: Existing fraud evaluation service API remains stable (no breaking changes)
-- **ASSUMPTION-002**: Card data schema provided by backend team (migrations prepared)
-- **ASSUMPTION-003**: User authentication (JWT tokens) already implemented and working
-- **ASSUMPTION-004**: RabbitMQ available for event publishing (already running in docker-compose)
-- **ASSUMPTION-005**: Geolocation data available in transfer requests (device_id → location lookup)
-- **ASSUMPTION-006**: Test database separate from production (safe to use fixtures)
-- **ASSUMPTION-007**: React version 18.3+ with hooks support available
-- **ASSUMPTION-008**: TypeScript types available for all dependencies
+- **RISK-001**: **Data Security Without Tokenization**
+  - *Impact*: Medium - Card numbers stored as plain text (encrypted DB volume only)
+  - *Mitigation*: Use MongoDB encrypted storage engine, limit access via RBAC, plan tokenization for post-MVP
+
+- **RISK-002**: **Basic Validation May Allow Invalid Cards**
+  - *Impact*: Low - Format validation only, no Luhn check
+  - *Mitigation*: Accept risk for MVP, add Luhn validation in post-MVP phase
+
+- **RISK-003**: **Race Condition on Max Cards Check**
+  - *Impact*: Low - User might add 11th card if two requests concurrent
+  - *Mitigation*: Use database unique constraint + atomic counter
+
+### Business Risks (MVP)
+
+- **RISK-004**: **Production Use Without PCI-DSS**
+  - *Impact*: High - Cannot process real payments until compliant
+  - *Mitigation*: Clearly document MVP limitations, add prominent "Demo Mode" disclaimer, implement PCI-DSS before public launch
+
+- **RISK-005**: **Duplicate Detection Limited to Last 4 Digits**
+  - *Impact*: Low - Different cards with same last 4 digits cannot be added
+  - *Mitigation*: Acceptable for MVP, improve with full card hashing in post-MVP
+
+### Operational Risks (MVP)
+
+- **RISK-006**: **Performance with Many Cards**
+  - *Impact*: Low - User with 10 cards experiences slow load times without caching
+  - *Mitigation*: Add MongoDB indexes, optimize queries, add Redis caching in post-MVP if needed
+
+### Assumptions (MVP)
+
+- **ASSUMPTION-001**: This is a demonstration/MVP system, NOT production-ready for real payment processing
+- **ASSUMPTION-002**: JWT authentication is already implemented and secure
+- **ASSUMPTION-003**: MongoDB has encrypted storage volumes in production environment
+- **ASSUMPTION-004**: Card data is NOT synced with external banking systems (internal records only)
+- **ASSUMPTION-005**: CVV is NOT stored (validation only, discarded after submission)
+- **ASSUMPTION-006**: Users cannot edit card details after creation (must remove and re-add)
+- **ASSUMPTION-007**: Card balance tracking is out of scope (separate feature)
+- **ASSUMPTION-008**: Post-MVP will implement full PCI-DSS compliance before production use
 
 ## 8. Related Specifications / Further Reading
 
-- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System architecture, Clean Architecture patterns
-- [docs/CONTEXT.md](../docs/CONTEXT.md) - Development workflows, TDD/BDD practices
-- [docs/PRODUCT.md](../docs/PRODUCT.md) - Product requirements, user stories
-- [docs/user-stories/HU-001-receive-transactions-api.md](../docs/user-stories/HU-001-receive-transactions-api.md) - Transaction API foundation
-- [docs/user-stories/HU-002-immutable-audit-trail.md](../docs/user-stories/HU-002-immutable-audit-trail.md) - Audit trail for card operations
-- [docs/user-stories/HU-003-detect-high-amount.md](../docs/user-stories/HU-003-detect-high-amount.md) - Fraud detection (transfer validation)
-- Playwright Documentation: https://playwright.dev
-- FastAPI Documentation: https://fastapi.tiangolo.com
-- MongoDB Documentation: https://docs.mongodb.com
-- Zustand Documentation: https://github.com/pmndrs/zustand
-- React Hook Form: https://react-hook-form.com
-- TailwindCSS: https://tailwindcss.com
-- WCAG 2.1 AA Standards: https://www.w3.org/WAI/WCAG21/quickref
+### Internal Documentation
+
+- [HU-015: Add and Link Cards to Account](../docs/user-stories/HU-015-add-cards-to-account.md) - Original user story
+- [HU-016: View and Manage Multiple Cards](../docs/user-stories/HU-016-view-manage-multiple-cards.md) - Related card list view feature
+- [HU-002: Immutable Audit Trail](../docs/user-stories/HU-002-immutable-audit-trail.md) - Audit logging requirements
+- [ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System architecture and Clean Architecture patterns
+- [CONTEXT.md](../docs/CONTEXT.md) - Development setup and TDD workflow
+- [TDD-GUIDE.md](../TDD-GUIDE.md) - Detailed TDD practices for this project
+
+### External Resources (Post-MVP)
+
+- [PCI DSS Quick Reference Guide](https://www.pcisecuritystandards.org/documents/PCI_DSS_v3-2-1_QRG.pdf) - For future compliance implementation
+- [Luhn Algorithm Wikipedia](https://en.wikipedia.org/wiki/Luhn_algorithm) - For post-MVP validation enhancement
 
 ---
 
-**Implementation Plan Version: 1.0** | **Created: 2026-01-28** | **Owner: Development Team** | **Status: Ready for Implementation**
+**Implementation Plan Version**: 1.0 (MVP Scope)  
+**Last Updated**: 2026-01-28  
+**Estimated Effort**: 8 Story Points (~2 sprints for 2-person team)  
+**Prerequisites**: MongoDB with encrypted storage, JWT authentication, audit trail system (HU-002)
 
+**MVP Scope Summary:**
+- ✅ Basic card CRUD operations
+- ✅ Format validation (16 digits, MM/YY expiry)
+- ✅ Soft delete with audit trail
+- ✅ 10-card limit per user
+- ✅ Duplicate prevention (last 4 digits)
+- ❌ Luhn algorithm validation (post-MVP)
+- ❌ Card issuer detection (post-MVP)
+- ❌ PCI-DSS tokenization (post-MVP)
+- ❌ CVV encryption (CVV not stored in MVP)
+
+**Total Tasks**: 96 (reduced from 119)
+
+**Next Steps**:
+1. Review simplified MVP plan with team
+2. Confirm acceptable security level for demo/internal use
+3. Begin Phase 1 (Domain Layer) with RED tests
+4. Schedule approval gate meetings for each phase
+5. Plan post-MVP security enhancements
