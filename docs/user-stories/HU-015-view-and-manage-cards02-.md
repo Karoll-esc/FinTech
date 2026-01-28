@@ -1,167 +1,93 @@
-# HU-015: View and Manage Multiple Cards
+# HU-015: Add and Link Cards to Account
 
 **As a** bank customer  
-**I want** to view all my linked cards with their details and perform actions on them  
-**So that** I can manage my finances and cards effectively from a single dashboard
+**I want** to add new debit/credit cards to my account  
+**So that** I can manage multiple payment methods and track their transactions independently
 
 ## Acceptance Criteria
 
-### Scenario: View all linked cards with details
+### Scenario: Add a new card successfully
 
 ```gherkin
-Given I am an authenticated user logged into the user app
-When I navigate to the Cards page
-Then I should see all my linked cards displayed (paginated if > 3)
-And each card should display:
-  | Field              | Format/Example           |
-  | card_number        | XXXX-XXXX-XXXX-1234      |
-  | card_holder_name   | Juan Pérez               |
-  | current_balance    | $1,250.50 COP            |
-  | expiry_date        | MM/YY                    |
-  | card_status        | Active/Blocked           |
-  | card_type          | Debit/Credit             |
-  | nickname           | "Personal Card" (if set) |
-And each card should have action buttons for:
-  | Action             | Description                        |
-  | View Transactions  | See card-specific movements        |
-  | Make Transaction   | Pay/transfer using this card       |
-  | Block Card         | Temporarily disable card           |
-  | Card Details       | Full card information              |
-  | Remove Card        | Unlink from account (HU-016)       |
-```
-
-### Scenario: View card-specific transactions
-
-```gherkin
-Given I click "View Transactions" on card ending in 1234
-When the transaction list loads
-Then I should see ONLY transactions made with that specific card
-And each transaction displays:
-  | Field            | Content                  |
-  | transaction_id   | UUID                     |
-  | transaction_date | 2026-01-28 14:30:00      |
-  | description      | Supermarket Purchase     |
-  | amount           | -$45.99 COP              |
-  | merchant         | Carrefour                |
-  | status           | Completed/Pending/Failed |
-  | fraud_score      | 0.15 (if evaluated)      |
-And the list should be sorted by date (most recent first)
-And I should have filters:
-  | Filter           | Options                            |
-  | Date Range       | Last 7/30/90 days, Custom          |
-  | Status           | All/Completed/Pending/Failed       |
-  | Amount Range     | Min-Max input                      |
-```
-
-### Scenario: Make transaction from specific card
-
-```gherkin
-Given I have an active card selected
-When I click "Make Transaction" button
-Then a transaction form should appear with:
+Given I am an authenticated user on the Cards section
+When I click "Add New Card" button
+Then a card registration form should appear with:
   | Field              | Validation                              |
-  | source_card        | Pre-filled (current card, read-only)    |
-  | amount             | Numeric, required, > 0, ≤ card balance  |
-  | recipient_user_id  | String, required, exists in system      |
-  | description        | Optional, 200 chars max                 |
-  | location           | Auto-detected lat/lng (optional manual) |
-  | device_id          | Auto-detected from browser/app          |
-And when I submit with valid data
+  | card_number        | 16 digits, required, Luhn algorithm     |
+  | card_holder_name   | Alphabetic, required, 3-50 chars        |
+  | expiry_date        | MM/YY format, future date required      |
+  | cvv                | 3-4 digits, required (encrypted)        |
+  | card_type          | Debit/Credit dropdown                   |
+  | nickname           | Optional, 20 chars max                  |
+And when I submit valid data
 Then the system should:
-  | Action                  | Behavior                                |
-  | Validate balance        | Check card.current_balance ≥ amount     |
-  | Create transaction      | POST /api/v1/transactions               |
-  | Publish to fraud queue  | fraud.queue (async evaluation)          |
-  | Return 202 Accepted     | transaction_id in response              |
-And I should see confirmation:
-  | Field              | Content                               |
-  | success_message    | "Transaction initiated successfully"  |
-  | transaction_id     | UUID                                  |
-  | amount             | $45.99                                |
-  | recipient          | user_id                               |
-  | status             | "Pending Evaluation"                  |
-  | estimated_time     | "Results in ~2 minutes"               |
+  | Action                  | Behavior                              |
+  | Validate card number    | Check Luhn + issuer (Visa/MC/Amex)    |
+  | Create card record      | POST /api/v1/cards                    |
+  | Link to user_id         | Associate card with current user      |
+  | Set initial status      | "Active"                              |
+  | Set initial balance     | $0.00 (or sync with issuer API)       |
+And I should see: "Card added successfully"
+And the new card appears in my cards list
 ```
 
-### Scenario: Transaction fails - insufficient balance
+### Scenario: Card validation failure
 
 ```gherkin
-Given my card ending in 1234 has balance $100.00
-When I attempt to make a transaction for $150.00
-And I submit the transaction form
-Then I should receive HTTP 400 Bad Request
-And see error:
-  | Field              | Content                                  |
-  | error_message      | "Insufficient balance on selected card"  |
-  | available_balance  | "$100.00"                                |
-  | requested_amount   | "$150.00"                                |
+Given I enter an invalid card number "1234-5678-9012-3456"
+When I submit the form
+Then I should receive validation errors:
+  | Field              | Error Message                           |
+  | card_number        | "Invalid card number (Luhn check fail)" |
+And the form should not submit
 ```
 
-### Scenario: Cannot transact from blocked card
+### Scenario: Duplicate card prevention
 
 ```gherkin
-Given I have a blocked card
-When I attempt to click "Make Transaction"
-Then the button should be disabled
-And a tooltip should appear: "Cannot transact from blocked card. Unblock first."
+Given I already have a card with number ending in 1234
+When I try to add the same card again
+Then I should receive HTTP 409 Conflict
+And see error: "This card is already linked to your account"
 ```
 
-### Scenario: Card blocked status indicator
+### Scenario: Max cards limit reached
 
 ```gherkin
-Given I have a card that is blocked
-When I view my cards
-Then the blocked card should display:
-  | Indicator         | Behavior                        |
-  | Status Badge      | "BLOCKED" in red background     |
-  | Action Buttons    | "Unblock Card" button available |
-  | Transaction Button| Disabled/grayed out             |
-  | Visual Treatment  | Dimmed appearance               |
+Given I have 10 cards already linked (system limit)
+When I try to add an 11th card
+Then I should receive HTTP 429 Too Many Requests
+And see: "Maximum of 10 cards per account. Remove a card to add new one."
 ```
 
-### Scenario: Max 3 cards displayed by default
+### Scenario: Card removed successfully
 
 ```gherkin
-Given I have 5 cards linked
-When I navigate to the Cards section
-Then only 3 cards should be displayed by default
-And I should see a "View All Cards" button
-And clicking it should show all 5 cards in paginated view (3 per page)
-```
-
-### Scenario: Empty state - no cards linked
-
-```gherkin
-Given I have no cards linked to my account
-When I navigate to the Cards section
-Then I should see:
-  | Content                   |
-  | "No cards found" message  |
-  | "Add Your First Card" CTA |
-And the CTA button should navigate to card add form (HU-016)
-```
-
-### Scenario: Real-time balance updates
-
-```gherkin
-Given I make a transaction from card ending in 1234
-When the transaction completes
-Then the card balance should update automatically
-And I should see a notification: "Card balance updated: $1,204.51"
-And the transaction should appear in card-specific transaction history
+Given I have a card I want to remove
+When I click "Remove Card" on that card
+Then a confirmation modal should appear:
+  | Content                                      |
+  | "Are you sure? This action cannot be undone" |
+  | "Remove" button (danger style)               |
+  | "Cancel" button                              |
+And when I confirm
+Then the system should:
+  | Action                  | Behavior                    |
+  | Soft-delete card        | DELETE /api/v1/cards/{id}   |
+  | Archive transactions    | Keep history, mark inactive |
+  | Update UI               | Remove card from list       |
+And I should see: "Card removed successfully"
 ```
 
 ## Acceptance Criteria - Non-Functional
 
-- **Performance**: Card data loads within 2 seconds
-- **Real-time**: Balance updates via WebSocket or polling (30s interval)
-- **Accessibility**: All buttons and text meet WCAG 2.1 AA standards
-- **Responsive**: Layout adapts to mobile (1 card), tablet (2 cards), desktop (3 cards)
-- **Security**: Card numbers partially masked (XXXX-XXXX-XXXX-1234)
-- **Internationalization**: Support for COP, USD, EUR currencies
+- **Security**: CVV encrypted in transit and storage, never logged
+- **Performance**: Card validation < 500ms
+- **Compliance**: PCI-DSS compliant (tokenize card data)
+- **Audit**: All add/remove actions logged to audit trail (HU-002)
 
 ## Estimation
 
-- **Story Points**: 13 (increased from 8 due to card-specific transaction isolation)
+- **Story Points**: 13
 - **Priority**: HIGH
-- **Dependency**: HU-016 (add cards), HU-002 (audit trail)
+- **Dependency**: HU-016 (card list view), PCI-DSS compliance setup
