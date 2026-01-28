@@ -151,9 +151,9 @@ const TransferForm: React.FC<TransferFormProps> = ({
               {...register('amount', {
                 required: 'Amount is required',
                 validate: {
-                  positive: (value) =>
+                  positive: (value: string) =>
                     parseFloat(value) > 0 || 'Amount must be greater than 0',
-                  sufficient: (value) =>
+                  sufficient: (value: string) =>
                     parseFloat(value) <= cardBalance ||
                     `Insufficient balance. Available: $${cardBalance.toFixed(2)}`,
                 },

@@ -55,7 +55,7 @@ interface CardStoreState {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
-export const useCardStore = create<CardStoreState>((set, get) => ({
+export const useCardStore = create<CardStoreState>()((set, _get) => ({
   // Initial state
   cards: [],
   selectedCard: null,
@@ -65,7 +65,7 @@ export const useCardStore = create<CardStoreState>((set, get) => ({
   error: null,
 
   // Fetch user's cards (with cache-aside pattern)
-  fetchUserCards: async (userId: string) => {
+  fetchUserCards: async (_userId: string) => {
     set({ loading: true, error: null });
     try {
       // Get token from localStorage
@@ -147,8 +147,8 @@ export const useCardStore = create<CardStoreState>((set, get) => ({
       const updatedCard = await response.json();
 
       // Update the card in state
-      set((state) => ({
-        cards: state.cards.map((card) =>
+      set((state: CardStoreState) => ({
+        cards: state.cards.map((card: CardData) =>
           card.card_id === cardId ? updatedCard : card
         ),
         loading: false,
@@ -181,8 +181,8 @@ export const useCardStore = create<CardStoreState>((set, get) => ({
       const updatedCard = await response.json();
 
       // Update the card in state
-      set((state) => ({
-        cards: state.cards.map((card) =>
+      set((state: CardStoreState) => ({
+        cards: state.cards.map((card: CardData) =>
           card.card_id === cardId ? updatedCard : card
         ),
         loading: false,
