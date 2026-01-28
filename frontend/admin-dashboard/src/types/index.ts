@@ -40,3 +40,29 @@ export interface TrendData {
   suspicious: number;
   rejected: number;
 }
+
+// Card Management Types (HU-015, HU-016)
+export interface Card {
+  card_id: string;
+  card_number: string; // Masked: ****0366
+  card_holder_name: string;
+  expiry_date: string; // MM/YY format
+  card_type: 'DEBIT' | 'CREDIT';
+  nickname?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardListResponse {
+  cards: Card[];
+  total: number;
+}
+
+export interface AddCardRequest {
+  card_number: string; // 16 digits
+  card_holder_name: string; // 3-50 characters
+  expiry_date: string; // MM/YY format
+  card_type: 'DEBIT' | 'CREDIT';
+  nickname?: string; // Optional, max 20 chars
+}
