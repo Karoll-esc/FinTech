@@ -55,6 +55,8 @@ Para una descripción más detallada ver:
 
 ## 🎯 Historias de Usuario Implementadas
 
+### Detección de Fraude (HU-001 a HU-014)
+
 - **HU-001**: API de recepción de transacciones (202 Accepted) - ✅ 5 tests
 - **HU-002**: Auditoría de evaluaciones - ✅ 5 tests
 - **HU-003**: Regla de umbral de monto (>$1,500) - ✅ 5 tests
@@ -70,7 +72,38 @@ Para una descripción más detallada ver:
 - **HU-013**: Dashboard usuario (historial transacciones) - ✅ 4 tests
 - **HU-014**: Dashboard admin (métricas de fraude) - ✅ 3 tests
 
-**Total:** 14 historias, 162 tests, 100% cobertura ✅
+### Gestión de Tarjetas (HU-015 a HU-016) - NEW ✨
+
+- **HU-015**: Agregar tarjetas a la cuenta (máx. 10) - ✅ 37 tests (domain) + 19 (use cases) + 4 (integration)
+  - Validación de número (16 dígitos)
+  - Validación de fecha de vencimiento (MM/YY, fecha futura)
+  - Detección de duplicados (últimas 4 dígitos)
+  - Enmascaramiento de número (****0366 en API)
+  - Límite máximo de 10 tarjetas por usuario
+  - Auditoría de eventos (CARD_ADDED, CARD_UPDATED, CARD_REMOVED)
+
+- **HU-016**: Ver y gestionar múltiples tarjetas - ✅ 40+ tests (frontend) + 11 (E2E)
+  - Listar todas las tarjetas del usuario
+  - Ver detalles de tarjeta individual
+  - Actualizar apodo de tarjeta (max 20 caracteres)
+  - Eliminar tarjeta con confirmación (soft-delete)
+  - Interfaz responsive (mobile, tablet, desktop)
+  - Validación accesible (ARIA labels, navegación teclado)
+  - Error handling con mensajes contextuales
+
+**Total:** 16 historias, 220+ tests, >95% cobertura ✅
+
+### Endpoints API de Tarjetas
+
+| Método | Endpoint | Descripción | Tests |
+|--------|----------|-------------|-------|
+| POST | `/cards` | Agregar nueva tarjeta | 21 (endpoint tests) |
+| GET | `/cards` | Listar tarjetas del usuario | 21 (endpoint tests) |
+| GET | `/cards/{card_id}` | Ver detalles de tarjeta | 21 (endpoint tests) |
+| PUT | `/cards/{card_id}` | Actualizar apodo | 21 (endpoint tests) |
+| DELETE | `/cards/{card_id}` | Eliminar tarjeta (soft-delete) | 21 (endpoint tests) |
+
+📖 **Documentación completa:** [docs/CARDS-API.md](docs/CARDS-API.md)
 
 ## 🚀 Inicio Rápido
 
