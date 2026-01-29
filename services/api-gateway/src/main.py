@@ -12,7 +12,8 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from decimal import Decimal
 from api_gateway.routes import router
-from src.routes.cards import router as cards_router
+from src.routes.card_routes import router as cards_router
+from src.middleware.rate_limit import RateLimitMiddleware, get_redis_client
 from src.adapters import (
     MongoDBAdapter,
     RedisAdapter,
@@ -60,6 +61,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting middleware for card endpoints
+# This will be initialized with Redis client at startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Redis client for rate limiting"""
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            app.add_middleware(RateLimitMiddleware, redis_client=redis_client)
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to initialize rate limiting: {str(e)}")
+
 
 
 # Dependency Injection

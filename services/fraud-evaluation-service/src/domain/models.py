@@ -342,12 +342,22 @@ class CardStatus(Enum):
 
 class CardType(Enum):
     """
-    Enum que representa el tipo de tarjeta
+    Enum que representa el tipo de tarjeta (pueden ser de dos categorías)
     
-    TASK-008: Implementar CardType enum (DEBIT=1, CREDIT=2)
+    Categoría 1: Tipo de uso (DEBIT/CREDIT)
+    Categoría 2: Red de tarjeta (VISA/MASTERCARD/AMEX)
+    
+    TASK-008: Implementar CardType enum 
+    Valores numéricos permiten comparación si es necesario
     """
+    # Tipo de uso
     DEBIT = 1
     CREDIT = 2
+    
+    # Red de tarjeta (card network)
+    VISA = 10
+    MASTERCARD = 11
+    AMEX = 12
     
     def __str__(self):
         """Retorna el nombre del enum para serialización"""

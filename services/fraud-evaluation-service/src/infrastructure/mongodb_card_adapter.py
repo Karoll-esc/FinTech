@@ -1,157 +1,123 @@
 """
 MongoDB Card Adapter - Infrastructure Layer
-TASK-025 a TASK-029: Implementación de CardRepository para MongoDB
+Implementa el puerto CardRepository con MongoDB
 
 Cumple con:
-- Hexagonal Architecture: Adaptador que implementa port (CardRepository)
-- Dependency Inversion: Infraestructura depende de dominio, no al revés
-- Clean Architecture: Capa de infraestructura adapta tecnología externa
+- Hexagonal Architecture: Adaptador que implementa port
+- Dependency Inversion: Infraestructura depende de abstracción
+- Clean Architecture: Capa que adapta tecnología externa
 """
-import sys
-from pathlib import Path
-from typing import List, Optional
+
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-from decimal import Decimal
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "services" / "fraud-evaluation-service"))
-
-from src.domain.models import Card, CardStatus, CardType
-from src.application.ports.card_repository import CardRepository
+from src.application.ports.card_ports import CardRepository
 
 
 class MongoDBCardAdapter(CardRepository):
     """
     Adaptador MongoDB para CardRepository
     
-    TASK-025: Implementar adaptador que persiste tarjetas en MongoDB
-    TASK-026: Implementar get_by_user_id con ordenamiento
-    TASK-027: Implementar save con validación de duplicados
-    TASK-028: Implementar get_by_id
-    TASK-029: Crear índices para optimización
-    
-    Notas de seguridad (PCI-DSS):
-    - Solo almacena últimos 4 dígitos del número de tarjeta
-    - No almacena CVV ni información sensible
-    - Cifrado en tránsito (TLS) manejado por MongoDB
+    Persiste datos de tarjetas con seguridad PCI DSS:
+    - Solo almacena últimos 4 dígitos
+    - Número encriptado almacenado
+    - No almacena CVV
     """
     
     def __init__(self, collection):
         """
-        TASK-025: Inicializar adaptador con colección MongoDB
+        Inicializa el adaptador con colección MongoDB
         
         Args:
-            collection: pymongo.collection.Collection o mongomock collection
+            collection: pymongo collection para tarjetas
         """
-        self._collection = collection
+        self.collection = collection
+        self._create_indexes()
     
-    def save(self, card: Card) -> None:
+    def _create_indexes(self):
+        """Crea índices para optimización de queries"""
+        try:
+            # Índice en user_id para búsquedas por usuario
+            self.collection.create_index("user_id")
+            # Índice compuesto para búsquedas de duplicados
+            self.collection.create_index([("user_id", 1), ("last_4_digits", 1)])
+        except:
+            pass  # Si los índices ya existen o mongomock, ignorar
+    
+    async def save(self, user_id: str, card_data: dict) -> str:
         """
-        TASK-027: Guardar tarjeta en MongoDB
+        Guarda una tarjeta y retorna su ID
         
         Args:
-            card: Tarjeta a persistir
+            user_id: ID del usuario propietario
+            card_data: Datos de la tarjeta (número encriptado, últimos 4, tipo, etc.)
             
-        Raises:
-            ValueError: Si la tarjeta ya existe (ID duplicado)
+        Returns:
+            str: ID de la tarjeta guardada
         """
-        # Verificar que no exista tarjeta con el mismo ID
-        existing = self._collection.find_one({"_id": card.id})
-        if existing:
-            raise ValueError(f"Card with id {card.id} already exists")
-        
-        # Preparar documento MongoDB
+        # Preparar documento para MongoDB
         document = {
-            "_id": card.id,  # Usar card.id como _id de MongoDB
-            "user_id": card.user_id,
-            "card_number": card.card_number,  # Solo últimos 4 dígitos (ya enmascarado)
-            "card_type": card.card_type.value,  # Guardar valor numérico del enum
-            "balance": str(card.balance),  # Convertir Decimal a string para preservar precisión
-            "status": card.status.value,  # Guardar valor numérico del enum
-            "nickname": card.nickname,
-            "created_at": card.created_at
+            'user_id': user_id,
+            'created_at': datetime.utcnow(),
+            **card_data  # Desempaquetacar datos de tarjeta
         }
         
-        # Insertar en MongoDB
-        self._collection.insert_one(document)
+        # Insertar documento
+        result = self.collection.insert_one(document)
+        
+        # Retornar ID del documento insertado
+        return str(result.inserted_id)
     
-    def get_by_user_id(self, user_id: str) -> List[Card]:
+    async def find_by_user_id(self, user_id: str) -> List[dict]:
         """
-        TASK-026: Obtener todas las tarjetas de un usuario
+        Obtiene todas las tarjetas de un usuario
         
         Args:
-            user_id: Identificador del usuario
+            user_id: ID del usuario
             
         Returns:
-            Lista de tarjetas ordenadas por created_at DESC
-            Lista vacía si el usuario no tiene tarjetas
+            List[dict]: Lista de tarjetas (sin números sensibles)
         """
         # Buscar todas las tarjetas del usuario
-        cursor = self._collection.find({"user_id": user_id})
+        cards = self.collection.find(
+            {'user_id': user_id},
+            {
+                'encrypted_number': 0,  # No retornar número encriptado
+                'document_id': 0  # No retornar documento de identidad
+            }
+        ).sort('created_at', -1)  # Ordenar por más reciente primero
         
-        # Ordenar por created_at descendente (más nueva primero)
-        cursor = cursor.sort("created_at", -1)  # -1 = DESC
-        
-        # Convertir documentos a objetos Card
-        cards = []
-        for doc in cursor:
-            cards.append(self._document_to_card(doc))
-        
-        return cards
+        # Convertir cursor a lista
+        return list(cards)
     
-    def get_by_id(self, card_id: str) -> Optional[Card]:
+    async def exists_by_number(self, user_id: str, last_4_digits: str) -> bool:
         """
-        TASK-028: Obtener tarjeta por ID
+        Verifica si una tarjeta ya existe para este usuario
         
         Args:
-            card_id: Identificador de la tarjeta
+            user_id: ID del usuario
+            last_4_digits: Últimos 4 dígitos
             
         Returns:
-            Card si existe, None si no se encuentra
+            bool: True si ya existe, False si no
         """
-        document = self._collection.find_one({"_id": card_id})
+        # Buscar tarjeta con estos últimos 4 dígitos
+        card = self.collection.find_one({
+            'user_id': user_id,
+            'last_4_digits': last_4_digits
+        })
         
-        if document is None:
-            return None
-        
-        return self._document_to_card(document)
+        return card is not None
     
-    def ensure_indexes(self) -> None:
+    async def count_by_user_id(self, user_id: str) -> int:
         """
-        TASK-029: Crear índices para optimización
-        
-        Índices creados:
-        - user_id: Para búsquedas rápidas por usuario
-        - user_id + created_at: Para ordenamiento eficiente
-        
-        Note: Este método debe llamarse al inicializar la aplicación
-        """
-        # Índice en user_id para get_by_user_id()
-        self._collection.create_index("user_id")
-        
-        # Índice compuesto para ordenamiento eficiente
-        self._collection.create_index([
-            ("user_id", 1),      # Ascendente
-            ("created_at", -1)   # Descendente
-        ])
-    
-    def _document_to_card(self, document: dict) -> Card:
-        """
-        Convertir documento MongoDB a objeto Card del dominio
+        Cuenta cuántas tarjetas tiene un usuario
         
         Args:
-            document: Documento de MongoDB
+            user_id: ID del usuario
             
         Returns:
-            Objeto Card del dominio
+            int: Cantidad de tarjetas
         """
-        return Card(
-            id=document["_id"],
-            user_id=document["user_id"],
-            card_number=document["card_number"],
-            card_type=CardType(document["card_type"]),  # Convertir int a enum
-            balance=Decimal(document["balance"]),  # Convertir string a Decimal
-            status=CardStatus(document["status"]),  # Convertir int a enum
-            nickname=document.get("nickname"),  # Puede ser None
-            created_at=document["created_at"]
-        )
+        # Contar documentos con este user_id
+        count = self.collection.count_documents({'user_id': user_id})
+        return count
