@@ -5,7 +5,7 @@
  * y manejar errores más fácilmente.
  */
 import axios from 'axios';
-import type { Rule, Transaction, Metrics, TrendData, Card, CardListResponse, AddCardRequest } from '@/types';
+import type { Rule, Transaction, Metrics, TrendData } from '@/types';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
@@ -89,25 +89,4 @@ export const getTrends = async (): Promise<TrendData[]> => {
   return response.data;
 };
 
-// Cards (HU-015, HU-016)
-export const listCards = async (): Promise<CardListResponse> => {
-  const response = await api.get('/cards');
-  return response.data;
-};
-
-export const getCardDetails = async (cardId: string): Promise<Card> => {
-  const response = await api.get(`/cards/${cardId}`);
-  return response.data;
-};
-
-export const addCard = async (cardData: AddCardRequest): Promise<Card> => {
-  const response = await api.post('/cards', cardData);
-  return response.data;
-};
-
-export const deleteCard = async (cardId: string): Promise<void> => {
-  await api.delete(`/cards/${cardId}`);
-};
-
-export const updateCardNickname = async (cardId: string, nickname: string): Promise<Card> => {
-  const response = await api.put(`/cards/${cardId}`, { nickname });
+export default api;

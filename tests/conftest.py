@@ -72,14 +72,15 @@ def mock_redis():
 def pytest_sessionstart(session):
     """Ensure service src folders are on sys.path so imports like `src.*` work."""
     repo_root = Path(__file__).resolve().parents[1]
-    # Make the repository root importable
+    # Make the repository root importable so tests can `import services...`
     repo_root_str = str(repo_root)
     if repo_root_str not in sys.path:
         sys.path.insert(0, repo_root_str)
-    
-    # Add fraud-evaluation-service/src to sys.path
-    fraud_service_src = repo_root / 'services' / 'fraud-evaluation-service' / 'src'
-    if fraud_service_src.exists():
-        fraud_src_str = str(fraud_service_src)
-        if fraud_src_str not in sys.path:
-            sys.path.insert(0, fraud_src_str)
+    services_dir = repo_root / 'services'
+    if services_dir.exists():
+        for child in services_dir.iterdir():
+            src_folder = child / 'src'
+            if src_folder.exists():
+                p = str(src_folder)
+                if p not in sys.path:
+                    sys.path.insert(0, p)

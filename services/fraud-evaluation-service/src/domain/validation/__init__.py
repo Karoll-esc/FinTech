@@ -1,1 +1,0 @@
-"""Card validation module"""

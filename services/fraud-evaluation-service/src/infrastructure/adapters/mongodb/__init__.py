@@ -1,1 +1,0 @@
-"""MongoDB adapters package."""
