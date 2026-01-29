@@ -111,3 +111,7 @@ export const deleteCard = async (cardId: string): Promise<void> => {
 
 export const updateCardNickname = async (cardId: string, nickname: string): Promise<Card> => {
   const response = await api.put(`/cards/${cardId}`, { nickname });
+  return response.data;
+};
+
+export default api;

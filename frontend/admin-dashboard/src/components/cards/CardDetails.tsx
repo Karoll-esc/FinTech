@@ -47,7 +47,7 @@
  */
 
 import React, { useState } from 'react';
-import { useCard, Card } from '@/hooks/useCard';
+import { useCard } from '@/hooks/useCard';
 import Toast from '../Toast';
 import ToastContainer from '../ToastContainer';
 

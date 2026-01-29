@@ -10,7 +10,7 @@
  * - Icon indicators for error types
  */
 
-import React, { ReactNode } from 'react';
+import React from 'react';
 
 export interface CardErrorProps {
   error: string;
@@ -84,7 +84,7 @@ export const CardErrorBoundary: React.FC<CardErrorProps> = ({
   errorCode,
   onDismiss,
   onRetry,
-  context = 'form',
+  context: _context = 'form',
 }) => {
   const errorInfo = getErrorContext(errorCode, error);
 

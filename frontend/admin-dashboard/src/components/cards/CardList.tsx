@@ -46,7 +46,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { useCard, Card } from '@/hooks/useCard';
+import { useCard } from '@/hooks/useCard';
 import Toast from '../Toast';
 import ToastContainer from '../ToastContainer';
 
@@ -82,8 +82,8 @@ interface Toast {
  * - Confirm delete → Soft-delete (mark INACTIVE)
  * - Refresh → Manual reload
  */
-export const CardList: React.FC<CardListProps> = ({ onCardDeleted, onCardSelected, onRefresh }) => {
-  const { cards, isLoading, error, listCards, removeCard, isSubmitting } = useCard();
+export const CardList: React.FC<CardListProps> = ({ onCardDeleted, onCardSelected }) => {
+  const { cards, isLoading, error, listCards, removeCard } = useCard();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deletingCard, setDeletingCard] = useState<string | null>(null);

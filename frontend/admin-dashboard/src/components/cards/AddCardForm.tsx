@@ -165,7 +165,7 @@ const validateNickname = (value: string): string | undefined => {
  * 4. Reset form
  */
 export const AddCardForm: React.FC<AddCardFormProps> = ({ onCardAdded, onClose }) => {
-  const { addCard, isSubmitting, error: hookError } = useCard();
+  const { addCard, isSubmitting } = useCard();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const [formData, setFormData] = useState<FormData>({
