@@ -12,6 +12,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from decimal import Decimal
 from api_gateway.routes import router
+from src.routes.cards import router as cards_router
 from src.adapters import (
     MongoDBAdapter,
     RedisAdapter,
@@ -256,6 +257,10 @@ app.include_router(router)
 app.include_router(api_v1_router)  # Añadir router v1
 app.include_router(auth_router)  # Añadir router de autenticación
 app.include_router(admin_auth_router)  # Añadir router de autenticación de admins
+
+
+# Registrar routers
+app.include_router(cards_router)
 
 
 @app.get("/health")
