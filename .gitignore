@@ -59,6 +59,7 @@ services/shared/
 frontend/admin-dashboard/node_modules
 frontend/user-app/node_modules
 
+frontend/admin-dashboard/node_modules/
 
 # Node.js
 node_modules/
@@ -76,3 +77,6 @@ dist/
 build/
 .next/
 frontend/admin-dashboard/node_modules/
+
+/frontend/admin-dashboard/node_modules
+/frontend/user-app/node_modules
