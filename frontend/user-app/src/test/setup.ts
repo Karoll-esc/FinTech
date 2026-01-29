@@ -1,7 +1,7 @@
 // @ts-nocheck - Archivo de configuración de tests, dependencias instaladas en runtime
 import { expect, afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
-import * as matchers from '@testing-library/jest-dom/matchers';
+// import * as matchers from '@testing-library/jest-dom/matchers';
 
 // Declarar globals de vitest
 declare global {
@@ -10,7 +10,7 @@ declare global {
 }
 
 // Extender matchers de testing-library
-expect.extend(matchers);
+// expect.extend(matchers);
 
 // Limpiar después de cada test
 afterEach(() => {
