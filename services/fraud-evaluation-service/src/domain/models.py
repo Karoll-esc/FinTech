@@ -318,3 +318,124 @@ class Admin:
             "last_login": self.last_login.isoformat() if self.last_login else None,
         }
 
+
+# ========================================
+# Card Management Models (HU-015)
+# TASK-006 a TASK-010: Domain models para gestión de tarjetas
+# ========================================
+
+class CardStatus(Enum):
+    """
+    Enum que representa el estado de una tarjeta
+    
+    TASK-007: Implementar CardStatus enum (ACTIVE=1, BLOCKED=2, SUSPENDED=3)
+    Valores numéricos permiten comparación por gravedad
+    """
+    ACTIVE = 1
+    BLOCKED = 2
+    SUSPENDED = 3
+    
+    def __str__(self):
+        """Retorna el nombre del enum para serialización"""
+        return self.name
+
+
+class CardType(Enum):
+    """
+    Enum que representa el tipo de tarjeta
+    
+    TASK-008: Implementar CardType enum (DEBIT=1, CREDIT=2)
+    """
+    DEBIT = 1
+    CREDIT = 2
+    
+    def __str__(self):
+        """Retorna el nombre del enum para serialización"""
+        return self.name
+
+
+@dataclass(frozen=True)
+class Card:
+    """
+    Value Object que representa una tarjeta de pago
+    
+    TASK-006: Implementar Card value object siguiendo Domain-Driven Design
+    Inmutable (frozen=True) - garantiza thread-safety y comportamiento de Value Object
+    Validación en construcción - previene estados inválidos (principio: fail fast)
+    
+    HUMAN REVIEW (Development Team):
+    La IA sugirió almacenar el número completo de tarjeta enmascarado en el backend.
+    Lo rechacé por seguridad (PCI-DSS compliance). Solo almacenamos últimos 4 dígitos.
+    Ver RISK-002 en plan de implementación.
+    
+    Security Note:
+    - CVV NUNCA se almacena en este modelo
+    - Número completo solo se valida y luego se descarta
+    - Solo se persisten últimos 4 dígitos
+    """
+    id: str
+    user_id: str
+    card_number: str  # Solo últimos 4 dígitos cuando se persiste
+    card_type: CardType
+    balance: Decimal
+    status: CardStatus
+    created_at: datetime
+    nickname: Optional[str] = None
+    
+    def __post_init__(self) -> None:
+        """
+        Validación de reglas de negocio al momento de construcción
+        
+        TASK-010: Implementar validación en __post_init__
+        - saldo ≥ 0
+        - card_number longitud válida (16 dígitos o 4 dígitos si ya enmascarado)
+        - IDs no vacíos
+        """
+        # Validar ID no vacío
+        if not self.id or not self.id.strip():
+            raise ValueError("Card ID cannot be empty")
+        
+        # Validar User ID no vacío
+        if not self.user_id or not self.user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        
+        # Validar número de tarjeta
+        if len(self.card_number) == 16:
+            # Número completo - validar que sea numérico
+            if not self.card_number.isdigit():
+                raise ValueError("Card number must contain only digits")
+        elif len(self.card_number) == 4:
+            # Ya enmascarado (solo últimos 4 dígitos) - OK
+            if not self.card_number.isdigit():
+                raise ValueError("Card number must contain only digits")
+        else:
+            raise ValueError("Card number must be 16 digits")
+        
+        # TASK-005: Validar saldo no negativo
+        if self.balance < Decimal("0.00"):
+            raise ValueError("Balance cannot be negative")
+        
+        # Validar tipo de tarjeta
+        if not isinstance(self.card_type, CardType):
+            raise ValueError("card_type must be a CardType enum")
+        
+        # Validar estado
+        if not isinstance(self.status, CardStatus):
+            raise ValueError("status must be a CardStatus enum")
+    
+    def mask_card_number(self) -> str:
+        """
+        TASK-009: Implementar método mask_card_number() que retorna solo últimos 4 dígitos
+        
+        Retorna los últimos 4 dígitos del número de tarjeta.
+        Si el número ya está enmascarado (4 dígitos), lo retorna tal cual.
+        
+        Returns:
+            str: Últimos 4 dígitos (ej: "1234")
+        """
+        if len(self.card_number) == 16:
+            return self.card_number[-4:]
+        else:
+            # Ya está enmascarado
+            return self.card_number
+
