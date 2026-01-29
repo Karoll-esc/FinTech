@@ -20,6 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 
+
 # Virtual environments
 .venv/
 venv/
@@ -55,6 +56,9 @@ poetry.lock
 
 # Deprecated folders (moved to fraud-evaluation-service)
 services/shared/
+frontend/admin-dashboard/node_modules
+frontend/user-app/node_modules
+
 
 # Node.js
 node_modules/
@@ -71,3 +75,4 @@ coverage/
 dist/
 build/
 .next/
+frontend/admin-dashboard/node_modules/
